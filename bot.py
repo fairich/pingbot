@@ -1,4 +1,4 @@
-from telethon.sync import TelegramClient  # изменен импорт
+from telethon.sync import TelegramClient
 from telethon import events
 from telethon.tl.types import ChannelParticipantsAdmins
 import asyncio
@@ -18,6 +18,16 @@ bot_token = os.environ.get('BOT_TOKEN')
 # URL вашего приложения на Render
 RENDER_URL = "https://ping-bot-asa4.onrender.com"
 
+# Функция для поддержания бота активным
+def keep_alive():
+    while True:
+        try:
+            requests.get(RENDER_URL)
+            print("Пинг отправлен - бот активен")
+        except Exception as e:
+            print(f"Ошибка пинга: {str(e)}")
+        time.sleep(780)  # Пинг каждые 13 минут
+
 # Создаем event loop
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
@@ -31,13 +41,18 @@ def home():
 
 @client.on(events.NewMessage(pattern='/all'))
 async def all_cmd(event):
-    chat = await event.get_chat()
-    participants = await client.get_participants(chat)
-    mentions = []
-    for user in participants:
-        if not user.bot:
-            mentions.append(f"[{user.first_name}](tg://user?id={user.id})")
-    await event.respond("Внимание!\n" + " ".join(mentions))
+    print("Получена команда /all")
+    try:
+        chat = await event.get_chat()
+        participants = await client.get_participants(chat)
+        mentions = []
+        for user in participants:
+            if not user.bot:
+                mentions.append(f"[{user.first_name}](tg://user?id={user.id})")
+        await event.respond("Внимание!\n" + " ".join(mentions))
+        print("Сообщение отправлено успешно")
+    except Exception as e:
+        print(f"Ошибка: {str(e)}")
 
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
@@ -49,10 +64,15 @@ def main():
     flask_thread.daemon = True
     flask_thread.start()
     
+    # Запускаем поток для keep_alive
+    keep_alive_thread = Thread(target=keep_alive)
+    keep_alive_thread.daemon = True
+    keep_alive_thread.start()
+    
     # Запускаем бота
     with client:
         client.start(bot_token=bot_token)
-        print("Bot started successfully!")
+        print("Бот успешно запущен!")
         client.run_until_disconnected()
 
 if __name__ == '__main__':
