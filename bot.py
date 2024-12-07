@@ -49,7 +49,7 @@ async def all_cmd(event):
         for user in participants:
             if not user.bot:
                 mentions.append(f"[{user.first_name}](tg://user?id={user.id})")
-        await event.respond("Внимание!\n" + " ".join(mentions))
+        await event.respond("📢 Внимание!\n" + " ".join(mentions))
         print("Сообщение отправлено успешно")
     except Exception as e:
         print(f"Ошибка: {str(e)}")
