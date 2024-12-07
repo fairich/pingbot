@@ -5,48 +5,43 @@ import os
 import requests
 from threading import Thread
 import time
+from flask import Flask
+
+app = Flask(__name__)
 
 # Получаем данные из переменных окружения
-api_id = os.environ.get('API_ID')
+api_id = int(os.environ.get('API_ID'))
 api_hash = os.environ.get('API_HASH')
 bot_token = os.environ.get('BOT_TOKEN')
 
 # URL вашего приложения на Render
 RENDER_URL = "https://ping-bot-asa4.onrender.com"
 
-# Функция для поддержания бота активным
-def keep_alive():
-    while True:
-        try:
-            requests.get(RENDER_URL)
-            print("Пинг отправлен")
-        except:
-            print("Ошибка пинга")
-        time.sleep(60)  # Пинг каждые 13 минут
-
-# Создаем и запускаем поток для пинга
-keep_alive_thread = Thread(target=keep_alive)
-keep_alive_thread.daemon = True  # Поток будет завершен вместе с основной программой
-keep_alive_thread.start()
-
-# Создаем клиент
+# Создаем клиент Telegram
 client = TelegramClient('bot_session', api_id, api_hash).start(bot_token=bot_token)
+
+@app.route('/')
+def home():
+    return "Bot is running!"
 
 @client.on(events.NewMessage(pattern='/all'))
 async def all_cmd(event):
     chat = await event.get_chat()
-    
-    # Получаем всех участников чата
     participants = await client.get_participants(chat)
-    
-    # Формируем сообщение с тегами
     mentions = []
     for user in participants:
-        if not user.bot:  # Пропускаем ботов
+        if not user.bot:
             mentions.append(f"[{user.first_name}](tg://user?id={user.id})")
-    
-    # Отправляем сообщение с тегами
     await event.respond("Внимание!\n" + " ".join(mentions))
 
-# Запускаем бота
-client.run_until_disconnected()
+def run_bot():
+    client.run_until_disconnected()
+
+if __name__ == '__main__':
+    # Запускаем бота в отдельном потоке
+    bot_thread = Thread(target=run_bot)
+    bot_thread.start()
+    
+    # Запускаем веб-сервер
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
