@@ -1,3 +1,5 @@
+from telethon.sync import TelegramClient  # изменен импорт
+from telethon import events
 from telethon.tl.types import ChannelParticipantsAdmins
 import asyncio
 import os
@@ -16,8 +18,12 @@ bot_token = os.environ.get('BOT_TOKEN')
 # URL вашего приложения на Render
 RENDER_URL = "https://ping-bot-asa4.onrender.com"
 
+# Создаем event loop
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+
 # Создаем клиент Telegram
-client = TelegramClient('bot_session', api_id, api_hash)
+client = TelegramClient('bot_session', api_id, api_hash, loop=loop)
 
 @app.route('/')
 def home():
@@ -33,18 +39,21 @@ async def all_cmd(event):
             mentions.append(f"[{user.first_name}](tg://user?id={user.id})")
     await event.respond("Внимание!\n" + " ".join(mentions))
 
-async def start_bot():
-    await client.start(bot_token=bot_token)
-    await client.run_until_disconnected()
-
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
-if __name__ == '__main__':
+def main():
     # Запускаем Flask в отдельном потоке
     flask_thread = Thread(target=run_flask)
+    flask_thread.daemon = True
     flask_thread.start()
     
-    # Запускаем бота в основном потоке
-    asyncio.run(start_bot())
+    # Запускаем бота
+    with client:
+        client.start(bot_token=bot_token)
+        print("Bot started successfully!")
+        client.run_until_disconnected()
+
+if __name__ == '__main__':
+    main()
