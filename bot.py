@@ -103,39 +103,41 @@ async def ping_cmd(event):
     try:
         chat = await event.get_chat()
         
-        # Проверяем кулдаун только для команды ping
+        # Проверяем кулдаун
         can_ping, remaining = await check_cooldown('ping', chat.id)
         if not can_ping:
             await event.respond(f"⏳ Подождите еще {remaining//60} минут и {remaining%60} секунд")
             return
 
-        # Остальной код команды ping...
+        # Получаем всех участников чата
+        participants = await client.get_participants(chat)
+        mentions = []
+
+        # Если список пуст, добавляем всех пользователей
         if not data_store.ping_list:
-            participants = await client.get_participants(chat)
             for user in participants:
-                if not user.bot:
+                if not user.bot and not user.deleted:
                     data_store.ping_list.add(user.id)
             data_store.save_data()
 
-        mentions = []
-        for user_id in data_store.ping_list:
-            try:
-                user = await client.get_entity(user_id)
+        # Формируем список упоминаний из всех участников в ping_list
+        for user in participants:
+            if not user.bot and not user.deleted and user.id in data_store.ping_list:
                 mentions.append(f"[{user.first_name}](tg://user?id={user.id})")
-            except:
-                continue
 
         if not mentions:
             await event.respond("📝 Список пользователей пуст")
             return
 
+        # Отправляем пинги группами по 20 человек
         mention_groups = split_list(mentions, 20)
         for group in mention_groups:
             await event.respond("🔔 Пинг!\n" + " ".join(group))
             await asyncio.sleep(2)
 
     except Exception as e:
-        print(f"Ошибка: {str(e)}")
+        print(f"Ошибка в ping_cmd: {str(e)}")
+        await event.respond("Произошла ошибка при выполнении команды")
 
 @client.on(events.NewMessage(pattern=r'^/pingoff$'))
 async def pingoff_cmd(event):
@@ -258,25 +260,40 @@ def run_flask():
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
+#  функция для инициализации списка при старте бота
+async def initialize_ping_list(client):
+    try:
+        for dialog in await client.get_dialogs():
+            if dialog.is_group or dialog.is_channel:
+                participants = await client.get_participants(dialog)
+                for user in participants:
+                    if not user.bot and not user.deleted:
+                        data_store.ping_list.add(user.id)
+        data_store.save_data()
+        print("Список пинга инициализирован")
+    except Exception as e:
+        print(f"Ошибка при инициализации списка пинга: {str(e)}")
+
 def main():
-    # Запускаем Flask в отдельном потоке
     flask_thread = Thread(target=run_flask)
     flask_thread.daemon = True
     flask_thread.start()
     
-    # Запускаем поток для keep_alive
     keep_alive_thread = Thread(target=keep_alive)
     keep_alive_thread.daemon = True
     keep_alive_thread.start()
     
-    # Запускаем бота
     with client:
         client.start(bot_token=bot_token)
         print("Бот успешно запущен!")
         
-        # Добавляем задачу очистки статистики в event loop
-        loop.create_task(cleanup_old_stats())
+        # Инициализируем список пинга
+        client.loop.run_until_complete(initialize_ping_list(client))
         
+        # Устанавливаем команды бота
+        client.loop.run_until_complete(set_bot_commands(client))
+        
+        loop.create_task(cleanup_old_stats())
         client.run_until_disconnected()
 
 if __name__ == '__main__':
