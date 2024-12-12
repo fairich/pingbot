@@ -61,8 +61,8 @@ data_store = DataStore()
 async def check_cooldown(command_type, chat_id):
     current_time = time.time()
     last_time = data_store.last_ping_time.get(f"{command_type}_{chat_id}", 0)
-    if current_time - last_time < 3600:  # 1 час
-        remaining = 3600 - (current_time - last_time)
+    if current_time - last_time < 1800:  # 30 минут вместо 3600
+        remaining = 1800 - (current_time - last_time)
         return False, int(remaining)
     data_store.last_ping_time[f"{command_type}_{chat_id}"] = current_time
     return True, 0
