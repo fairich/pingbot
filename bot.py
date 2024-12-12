@@ -1,5 +1,5 @@
 from telethon.sync import TelegramClient
-from telethon import events
+from telethon import events, functions, types
 from telethon.tl.types import ChannelParticipantsAdmins
 import asyncio
 import os
@@ -22,10 +22,9 @@ RENDER_URL = "https://ping-bot-asa4.onrender.com"
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 
-# Создаем клиент Telegram - ВАЖНО: объявляем ДО декораторов
+# Создаем клиент Telegram
 client = TelegramClient('bot_session', api_id, api_hash, loop=loop)
 
-# Хранение данных
 class DataStore:
     def __init__(self):
         self.main_list = set()
@@ -33,7 +32,7 @@ class DataStore:
         self.message_stats = {}
         self.last_ping_time = {}
         self.load_data()
-
+    
     def load_data(self):
         try:
             with open('bot_data.json', 'r') as f:
@@ -57,83 +56,80 @@ class DataStore:
 
 data_store = DataStore()
 
-# Функция для проверки кулдауна
+def split_list(lst, n):
+    return [lst[i:i + n] for i in range(0, len(lst), n)]
+
 async def check_cooldown(command_type, chat_id):
     current_time = time.time()
     last_time = data_store.last_ping_time.get(f"{command_type}_{chat_id}", 0)
-    if current_time - last_time < 1800:  # 30 минут вместо 3600
+    if current_time - last_time < 1800:  # 30 минут
         remaining = 1800 - (current_time - last_time)
         return False, int(remaining)
     data_store.last_ping_time[f"{command_type}_{chat_id}"] = current_time
     return True, 0
 
-# Разделение списка на группы
-def split_list(lst, n):
-    return [lst[i:i + n] for i in range(0, len(lst), n)]
-
-# Обработчики команд
-@client.on(events.NewMessage(pattern='/all'))
-async def all_cmd(event):
+async def set_bot_commands(client):
+    commands = [
+        types.BotCommand(
+            command="all",
+            description="Пингует всех участников чата"
+        ),
+        types.BotCommand(
+            command="ping",
+            description="Пингует участников из списка уведомлений"
+        ),
+        types.BotCommand(
+            command="pingon",
+            description="Включить уведомления"
+        ),
+        types.BotCommand(
+            command="pingoff",
+            description="Отключить уведомления"
+        ),
+        types.BotCommand(
+            command="top",
+            description="Показать топ-20 активных участников за неделю"
+        )
+    ]
+    
     try:
-        chat = await event.get_chat()
-        can_ping, remaining = await check_cooldown('all', chat.id)
-        if not can_ping:
-            await event.respond(f"⏳ Подождите еще {remaining//60} минут и {remaining%60} секунд")
-            return
-
-        participants = await client.get_participants(chat)
-        mentions = []
-        for user in participants:
-            if not user.bot:
-                data_store.main_list.add(user.id)
-                mentions.append(f"[{user.first_name}](tg://user?id={user.id})")
-
-        mention_groups = split_list(mentions, 20)
-        for group in mention_groups:
-            await event.respond("📢 Внимание!\n" + " ".join(group))
-            await asyncio.sleep(2)
-        
-        data_store.save_data()
-
+        await client(functions.bots.SetBotCommandsRequest(
+            scope=types.BotCommandScopeDefault(),
+            lang_code='',
+            commands=commands
+        ))
+        print("Команды бота установлены!")
     except Exception as e:
-        print(f"Ошибка: {str(e)}")
+        print(f"Ошибка при установке команд бота: {str(e)}")
 
 @client.on(events.NewMessage(pattern=r'^/ping$'))
 async def ping_cmd(event):
     try:
         chat = await event.get_chat()
         
-        # Проверяем кулдаун
         can_ping, remaining = await check_cooldown('ping', chat.id)
         if not can_ping:
             await event.respond(f"⏳ Подождите еще {remaining//60} минут и {remaining%60} секунд")
             return
 
-        # Получаем всех участников чата
         participants = await client.get_participants(chat)
         mentions = []
 
-        # Если список пуст, добавляем всех пользователей
-        if not data_store.ping_list:
-            for user in participants:
-                if not user.bot and not user.deleted:
-                    data_store.ping_list.add(user.id)
-            data_store.save_data()
-
-        # Формируем список упоминаний из всех участников в ping_list
         for user in participants:
-            if not user.bot and not user.deleted and user.id in data_store.ping_list:
+            if not user.bot and not user.deleted:
+                data_store.ping_list.add(user.id)
                 mentions.append(f"[{user.first_name}](tg://user?id={user.id})")
 
         if not mentions:
             await event.respond("📝 Список пользователей пуст")
             return
 
-        # Отправляем пинги группами по 20 человек
         mention_groups = split_list(mentions, 20)
         for group in mention_groups:
             await event.respond("🔔 Пинг!\n" + " ".join(group))
             await asyncio.sleep(2)
+
+        data_store.save_data()
 
     except Exception as e:
         print(f"Ошибка в ping_cmd: {str(e)}")
@@ -141,7 +137,6 @@ async def ping_cmd(event):
 
 @client.on(events.NewMessage(pattern=r'^/pingoff$'))
 async def pingoff_cmd(event):
-    # Простое отключение без проверки кулдауна
     user_id = event.sender_id
     if user_id in data_store.ping_list:
         data_store.ping_list.remove(user_id)
@@ -152,7 +147,6 @@ async def pingoff_cmd(event):
 
 @client.on(events.NewMessage(pattern=r'^/pingon$'))
 async def pingon_cmd(event):
-    # Простое включение без проверки кулдауна
     user_id = event.sender_id
     if user_id not in data_store.ping_list:
         data_store.ping_list.add(user_id)
@@ -161,7 +155,98 @@ async def pingon_cmd(event):
     else:
         await event.respond("❌ Уведомления уже включены")
 
-@client.on(events.NewMessage(pattern='/top'))
+@client.on(events.ChatAction)
+async def handle_user_update(event):
+    try:
+        if event.user_joined or event.user_added:
+            user_id = event.user_id
+            if user_id not in data_store.ping_list:
+                data_store.ping_list.add(user_id)
+                data_store.save_data()
+    except Exception as e:
+        print(f"Ошибка при обработке нового участника: {str(e)}")
+
+@app.route('/')
+def home():
+    return "Bot is running!"
+
+def keep_alive():
+    while True:
+        try:
+            requests.get(RENDER_URL)
+            print("Пинг отправлен - бот активен")
+        except Exception as e:
+            print(f"Ошибка пинга: {str(e)}")
+        time.sleep(780)
+
+def run_flask():
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
+
+def main():
+    flask_thread = Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+    
+    keep_alive_thread = Thread(target=keep_alive)
+    keep_alive_thread.daemon = True
+    keep_alive_thread.start()
+    
+    with client:
+        client.start(bot_token=bot_token)
+        print("Бот успешно запущен!")
+        
+        client.loop.run_until_complete(set_bot_commands(client))
+        
+loop.create_task(cleanup_old_stats())
+          client.run_until_disconnected()
+
+async def cleanup_old_stats():
+    while True:
+        try:
+            current_time = datetime.now()
+            week_ago = current_time - timedelta(days=7)
+            
+            for chat_id in data_store.message_stats:
+                data_store.message_stats[chat_id] = {
+                    user_id: [count, last_time]
+                    for user_id, (count, last_time) in data_store.message_stats[chat_id].items()
+                    if datetime.fromtimestamp(last_time) > week_ago
+                }
+            
+            data_store.save_data()
+        except Exception as e:
+            print(f"Ошибка при очистке статистики: {str(e)}")
+        
+        await asyncio.sleep(86400)  # Очистка раз в день
+
+@client.on(events.NewMessage)
+async def count_messages(event):
+    if event.is_private:
+        return
+
+    try:
+        chat_id = str(event.chat_id)
+        user_id = str(event.sender_id)
+        current_time = time.time()
+
+        if chat_id not in data_store.message_stats:
+            data_store.message_stats[chat_id] = {}
+
+        if user_id not in data_store.message_stats[chat_id]:
+            data_store.message_stats[chat_id][user_id] = [0, current_time]
+
+        count, _ = data_store.message_stats[chat_id][user_id]
+        data_store.message_stats[chat_id][user_id] = [count + 1, current_time]
+
+        # Сохраняем данные каждые 100 сообщений
+        if sum(stats[0] for stats in data_store.message_stats[chat_id].values()) % 100 == 0:
+            data_store.save_data()
+
+    except Exception as e:
+        print(f"Ошибка при подсчете сообщений: {str(e)}")
+
+@client.on(events.NewMessage(pattern=r'^/top$'))
 async def top_cmd(event):
     try:
         chat = await event.get_chat()
@@ -194,107 +279,8 @@ async def top_cmd(event):
         await event.respond(result)
 
     except Exception as e:
-        print(f"Ошибка: {str(e)}")
-
-# Отслеживание сообщений для статистики
-@client.on(events.NewMessage)
-async def count_messages(event):
-    if event.is_private:
-        return
-
-    try:
-        chat_id = str(event.chat_id)
-        user_id = str(event.sender_id)
-        current_time = time.time()
-
-        if chat_id not in data_store.message_stats:
-            data_store.message_stats[chat_id] = {}
-
-        if user_id not in data_store.message_stats[chat_id]:
-            data_store.message_stats[chat_id][user_id] = [0, current_time]
-
-        count, _ = data_store.message_stats[chat_id][user_id]
-        data_store.message_stats[chat_id][user_id] = [count + 1, current_time]
-
-        # Сохраняем данные каждые 100 сообщений
-        if sum(stats[0] for stats in data_store.message_stats[chat_id].values()) % 100 == 0:
-            data_store.save_data()
-
-    except Exception as e:
-        print(f"Ошибка при подсчете сообщений: {str(e)}")
-
-def keep_alive():
-    while True:
-        try:
-            requests.get(RENDER_URL)
-            print("Пинг отправлен - бот активен")
-        except Exception as e:
-            print(f"Ошибка пинга: {str(e)}")
-        time.sleep(780)  # Пинг каждые 13 минут
-
-# Очистка старой статистики
-async def cleanup_old_stats():
-    while True:
-        try:
-            current_time = datetime.now()
-            week_ago = current_time - timedelta(days=7)
-            
-            for chat_id in data_store.message_stats:
-                data_store.message_stats[chat_id] = {
-                    user_id: [count, last_time]
-                    for user_id, (count, last_time) in data_store.message_stats[chat_id].items()
-                    if datetime.fromtimestamp(last_time) > week_ago
-                }
-            
-            data_store.save_data()
-        except Exception as e:
-            print(f"Ошибка при очистке статистики: {str(e)}")
-        
-        await asyncio.sleep(86400)  # Выполняем очистку раз в день
-
-@app.route('/')
-def home():
-    return "Bot is running!"
-
-def run_flask():
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host='0.0.0.0', port=port)
-
-#  функция для инициализации списка при старте бота
-async def initialize_ping_list(client):
-    try:
-        for dialog in await client.get_dialogs():
-            if dialog.is_group or dialog.is_channel:
-                participants = await client.get_participants(dialog)
-                for user in participants:
-                    if not user.bot and not user.deleted:
-                        data_store.ping_list.add(user.id)
-        data_store.save_data()
-        print("Список пинга инициализирован")
-    except Exception as e:
-        print(f"Ошибка при инициализации списка пинга: {str(e)}")
-
-def main():
-    flask_thread = Thread(target=run_flask)
-    flask_thread.daemon = True
-    flask_thread.start()
-    
-    keep_alive_thread = Thread(target=keep_alive)
-    keep_alive_thread.daemon = True
-    keep_alive_thread.start()
-    
-    with client:
-        client.start(bot_token=bot_token)
-        print("Бот успешно запущен!")
-        
-        # Инициализируем список пинга
-        client.loop.run_until_complete(initialize_ping_list(client))
-        
-        # Устанавливаем команды бота
-        client.loop.run_until_complete(set_bot_commands(client))
-        
-        loop.create_task(cleanup_old_stats())
-        client.run_until_disconnected()
+        print(f"Ошибка в команде top: {str(e)}")
+        await event.respond("Произошла ошибка при выполнении команды")
 
 if __name__ == '__main__':
     main()
