@@ -66,57 +66,81 @@ async def all_cmd(event):
     try:
         chat = await event.get_chat()
         
+        # Проверяем кулдаун
         can_ping, remaining = await check_cooldown('all', chat.id)
         if not can_ping:
             await event.respond(f"⏳ Подождите еще {remaining//60} минут и {remaining%60} секунд")
             return
 
+        # Получаем всех участников
         participants = await client.get_participants(chat)
         mentions = []
+
+        # Добавляем всех в основной список и формируем упоминания
         for user in participants:
-            if not user.bot and not user.deleted:
+            if not user.bot and not user.deleted and user.username is not None:
+                data_store.ping_list.add(user.id)  # Добавляем в список для /ping
                 mentions.append(f"[{user.first_name}](tg://user?id={user.id})")
 
         if not mentions:
-            await event.respond("📝 Список пользователей пуст")
+            await event.respond("❌ Не удалось получить список пользователей")
             return
 
+        # Разбиваем на группы и отправляем
         mention_groups = split_list(mentions, 20)
         for group in mention_groups:
             await event.respond("📢 Внимание!\n" + " ".join(group))
             await asyncio.sleep(2)
 
+        # Сохраняем обновленный список
+        data_store.save_data()
+
     except Exception as e:
         print(f"Ошибка в all_cmd: {str(e)}")
+        await event.respond("Произошла ошибка при выполнении команды")
 
 @client.on(events.NewMessage(pattern=r'^/ping$'))
 async def ping_cmd(event):
     try:
         chat = await event.get_chat()
         
+        # Проверяем кулдаун
         can_ping, remaining = await check_cooldown('ping', chat.id)
         if not can_ping:
             await event.respond(f"⏳ Подождите еще {remaining//60} минут и {remaining%60} секунд")
             return
 
+        # Получаем всех участников
         participants = await client.get_participants(chat)
         mentions = []
 
+        # Если список пуст, добавляем всех пользователей
+        if not data_store.ping_list:
+            for user in participants:
+                if not user.bot and not user.deleted and user.username is not None:
+                    data_store.ping_list.add(user.id)
+
+        # Формируем список упоминаний из тех, кто в ping_list
         for user in participants:
             if not user.bot and not user.deleted and user.id in data_store.ping_list:
                 mentions.append(f"[{user.first_name}](tg://user?id={user.id})")
 
         if not mentions:
-            await event.respond("📝 Список пользователей пуст")
+            await event.respond("❌ Список пользователей для уведомлений пуст")
             return
 
+        # Разбиваем на группы и отправляем
         mention_groups = split_list(mentions, 20)
         for group in mention_groups:
             await event.respond("🔔 Пинг!\n" + " ".join(group))
             await asyncio.sleep(2)
 
+        # Сохраняем обновленный список
+        data_store.save_data()
+
     except Exception as e:
         print(f"Ошибка в ping_cmd: {str(e)}")
+        await event.respond("Произошла ошибка при выполнении команды")
 
 @client.on(events.NewMessage(pattern=r'^/pingoff$'))
 async def pingoff_cmd(event):
