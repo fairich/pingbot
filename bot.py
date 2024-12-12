@@ -26,7 +26,7 @@ client = TelegramClient('bot_session', api_id, api_hash, loop=loop)
 
 class DataStore:
     def __init__(self):
-        self.ping_list = set()
+        self.ping_disabled = set()  # Храним тех, кто отключил уведомления
         self.last_ping_time = {}
         self.load_data()
     
@@ -34,14 +34,14 @@ class DataStore:
         try:
             with open('bot_data.json', 'r') as f:
                 data = json.load(f)
-                self.ping_list = set(data.get('ping_list', []))
+                self.ping_disabled = set(data.get('ping_disabled', []))
                 self.last_ping_time = data.get('last_ping_time', {})
         except FileNotFoundError:
             pass
 
     def save_data(self):
         data = {
-            'ping_list': list(self.ping_list),
+            'ping_disabled': list(self.ping_disabled),
             'last_ping_time': self.last_ping_time
         }
         with open('bot_data.json', 'w') as f:
@@ -110,19 +110,10 @@ async def ping_cmd(event):
         participants = await client.get_participants(chat)
         mentions = []
 
-        # При первом запуске добавляем всех в список пинга
-        if not data_store.ping_list:
-            for user in participants:
-                if not user.bot and not user.deleted:
-                    data_store.ping_list.add(user.id)
-            data_store.save_data()
-
-        # Формируем список упоминаний ТОЛЬКО из тех, кто в списке ping_list
+        # Добавляем в список упоминаний только тех, кто НЕ отключил уведомления
         for user in participants:
-            if not user.bot and not user.deleted:
-                # Проверяем, есть ли пользователь в списке ping_list
-                if user.id in data_store.ping_list:
-                    mentions.append(f"[{user.first_name}](tg://user?id={user.id})")
+            if not user.bot and not user.deleted and user.id not in data_store.ping_disabled:
+                mentions.append(f"[{user.first_name}](tg://user?id={user.id})")
 
         if not mentions:
             await event.respond("❌ Нет пользователей для уведомления")
@@ -142,9 +133,8 @@ async def ping_cmd(event):
 async def pingoff_cmd(event):
     try:
         user_id = event.sender_id
-        # Удаляем пользователя из списка ping_list
-        if user_id in data_store.ping_list:
-            data_store.ping_list.remove(user_id)
+        if user_id not in data_store.ping_disabled:
+            data_store.ping_disabled.add(user_id)
             data_store.save_data()
             await event.respond("✅ Вы отключили уведомления")
         else:
@@ -157,9 +147,8 @@ async def pingoff_cmd(event):
 async def pingon_cmd(event):
     try:
         user_id = event.sender_id
-        # Добавляем пользователя в список ping_list
-        if user_id not in data_store.ping_list:
-            data_store.ping_list.add(user_id)
+        if user_id in data_store.ping_disabled:
+            data_store.ping_disabled.remove(user_id)
             data_store.save_data()
             await event.respond("✅ Вы включили уведомления")
         else:
