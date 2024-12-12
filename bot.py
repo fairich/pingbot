@@ -110,20 +110,22 @@ async def ping_cmd(event):
         participants = await client.get_participants(chat)
         mentions = []
 
-        # Если список пуст, добавляем всех пользователей
+        # При первом запуске добавляем всех в список пинга
         if not data_store.ping_list:
             for user in participants:
                 if not user.bot and not user.deleted:
                     data_store.ping_list.add(user.id)
+            data_store.save_data()
 
-        # Формируем список упоминаний только тех, кто не отключил уведомления
+        # Формируем список упоминаний ТОЛЬКО из тех, кто в списке ping_list
         for user in participants:
-            if (not user.bot and not user.deleted and 
-                user.id in data_store.ping_list):
-                mentions.append(f"[{user.first_name}](tg://user?id={user.id})")
+            if not user.bot and not user.deleted:
+                # Проверяем, есть ли пользователь в списке ping_list
+                if user.id in data_store.ping_list:
+                    mentions.append(f"[{user.first_name}](tg://user?id={user.id})")
 
         if not mentions:
-            await event.respond("❌ Список пользователей для уведомлений пуст")
+            await event.respond("❌ Нет пользователей для уведомления")
             return
 
         # Разбиваем на группы и отправляем
@@ -131,9 +133,6 @@ async def ping_cmd(event):
         for group in mention_groups:
             await event.respond("🔔 Пинг!\n" + " ".join(group))
             await asyncio.sleep(2)
-
-        # Сохраняем обновленный список
-        data_store.save_data()
 
     except Exception as e:
         print(f"Ошибка в ping_cmd: {str(e)}")
@@ -143,6 +142,7 @@ async def ping_cmd(event):
 async def pingoff_cmd(event):
     try:
         user_id = event.sender_id
+        # Удаляем пользователя из списка ping_list
         if user_id in data_store.ping_list:
             data_store.ping_list.remove(user_id)
             data_store.save_data()
@@ -157,6 +157,7 @@ async def pingoff_cmd(event):
 async def pingon_cmd(event):
     try:
         user_id = event.sender_id
+        # Добавляем пользователя в список ping_list
         if user_id not in data_store.ping_list:
             data_store.ping_list.add(user_id)
             data_store.save_data()
@@ -166,17 +167,6 @@ async def pingon_cmd(event):
     except Exception as e:
         print(f"Ошибка в pingon_cmd: {str(e)}")
         await event.respond("Произошла ошибка при выполнении команды")
-
-@client.on(events.ChatAction)
-async def handle_user_update(event):
-    try:
-        if event.user_joined or event.user_added:
-            user_id = event.user_id
-            if user_id not in data_store.ping_list:
-                data_store.ping_list.add(user_id)
-                data_store.save_data()
-    except Exception as e:
-        print(f"Ошибка при обработке нового участника: {str(e)}")
 
 @app.route('/')
 def home():
