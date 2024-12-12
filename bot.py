@@ -103,21 +103,20 @@ async def ping_cmd(event):
     try:
         chat = await event.get_chat()
         
-        # Проверяем кулдаун
+        # Проверяем кулдаун только для команды ping
         can_ping, remaining = await check_cooldown('ping', chat.id)
         if not can_ping:
             await event.respond(f"⏳ Подождите еще {remaining//60} минут и {remaining%60} секунд")
             return
 
-        # Если список пуст, добавляем всех пользователей
+        # Остальной код команды ping...
         if not data_store.ping_list:
             participants = await client.get_participants(chat)
             for user in participants:
-                if not user.bot:  # Пропускаем ботов
+                if not user.bot:
                     data_store.ping_list.add(user.id)
             data_store.save_data()
 
-        # Формируем список упоминаний
         mentions = []
         for user_id in data_store.ping_list:
             try:
@@ -130,7 +129,6 @@ async def ping_cmd(event):
             await event.respond("📝 Список пользователей пуст")
             return
 
-        # Отправляем пинги группами по 20 человек
         mention_groups = split_list(mentions, 20)
         for group in mention_groups:
             await event.respond("🔔 Пинг!\n" + " ".join(group))
@@ -139,20 +137,9 @@ async def ping_cmd(event):
     except Exception as e:
         print(f"Ошибка: {str(e)}")
 
-@client.on(events.NewMessage)
-async def update_participants(event):
-    """Автоматически добавляем новых участников в ping_list"""
-    try:
-        if event.chat_id:
-            user_id = event.sender_id
-            if user_id not in data_store.ping_list and not event.sender.bot:
-                data_store.ping_list.add(user_id)
-                data_store.save_data()
-    except Exception as e:
-        print(f"Ошибка при обновлении участников: {str(e)}")
-
 @client.on(events.NewMessage(pattern=r'^/pingoff$'))
 async def pingoff_cmd(event):
+    # Простое отключение без проверки кулдауна
     user_id = event.sender_id
     if user_id in data_store.ping_list:
         data_store.ping_list.remove(user_id)
@@ -163,6 +150,7 @@ async def pingoff_cmd(event):
 
 @client.on(events.NewMessage(pattern=r'^/pingon$'))
 async def pingon_cmd(event):
+    # Простое включение без проверки кулдауна
     user_id = event.sender_id
     if user_id not in data_store.ping_list:
         data_store.ping_list.add(user_id)
