@@ -195,11 +195,9 @@ def main():
     with client:
         client.start(bot_token=bot_token)
         print("Бот успешно запущен!")
-        
         client.loop.run_until_complete(set_bot_commands(client))
-        
-loop.create_task(cleanup_old_stats())
-          client.run_until_disconnected()
+        loop.create_task(cleanup_old_stats())
+        client.run_until_disconnected()
 
 async def cleanup_old_stats():
     while True:
