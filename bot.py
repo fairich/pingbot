@@ -18,13 +18,20 @@ api_hash = os.environ.get('API_HASH')
 bot_token = os.environ.get('BOT_TOKEN')
 RENDER_URL = "https://ping-bot-asa4.onrender.com"
 
+# Создаем event loop
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+
+# Создаем клиент Telegram - ВАЖНО: объявляем ДО декораторов
+client = TelegramClient('bot_session', api_id, api_hash, loop=loop)
+
 # Хранение данных
 class DataStore:
     def __init__(self):
-        self.main_list = set()  # Список для /all
-        self.ping_list = set()  # Список для /ping
-        self.message_stats = {}  # Статистика сообщений
-        self.last_ping_time = {}  # Время последнего использования команд
+        self.main_list = set()
+        self.ping_list = set()
+        self.message_stats = {}
+        self.last_ping_time = {}
         self.load_data()
 
     def load_data(self):
